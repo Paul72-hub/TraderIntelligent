@@ -1,0 +1,14 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+
+# Copies locales des flux / essais (jamais publiées)
+exploration/
+*.local.json
+*.local.csv
+
+# Éditeur / OS
+.vscode/
+Thumbs.db
+desktop.ini
