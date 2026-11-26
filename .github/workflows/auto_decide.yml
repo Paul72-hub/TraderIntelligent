@@ -8,6 +8,12 @@ name: Auto decide
 permissions:
   contents: write
 
+# Un seul run à la fois : un 2e run attend la fin du 1er au lieu de
+# modifier decision.json en parallèle (conflit constaté le 26/11, run #2).
+concurrency:
+  group: auto-decide
+  cancel-in-progress: false
+
 jobs:
   decide:
     runs-on: ubuntu-latest
