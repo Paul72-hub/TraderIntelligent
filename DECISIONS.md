@@ -7,8 +7,10 @@ sans frais. Référence = « ne rien faire ».
 | Date | Décision | Choix | Justification mesurée |
 |---|---|---|---|
 | 2026-11-26 | Confidentialité | Lire uniquement mon portefeuille et ceux des 3 baselines | Le leaderboard annonce les positions individuelles comme privées (alors qu'elles sont lisibles dans le dépôt public) |
+| 2026-11-26 | Objectif (D2) | Gain maximal ; la pire baisse reste mesurée et affichée | Choix personnel ; le risque est suivi pour vérifier que le gain ne vient pas d'un pari dangereux |
 | 2026-11-26 | Signal A | Retour à la moyenne, z-score, fenêtre 48 | +8 415 vs rien faire (14 215 vs 5 800) ; pire baisse −21,3 % vs −24,3 % ; fenêtre ≈ durée du cycle (~48 ticks) |
 | 2026-11-26 | Signal B | Garder (signal 0), vente finale éventuelle en manuel | Le z-score perd dans tous les réglages (−5 963 à −102) : la tendance haussière domine |
+| 2026-11-26 | Signal B (révisé) | Momentum, fenêtre 10 : +1 si prix > moyenne 10 ET moyenne en hausse (vs 5 ticks avant), −1 si prix < moyenne ET moyenne en baisse, sinon 0 | Intuition visuelle (cycle ~100 ticks sur tendance) testée : +3 512 vs garder sur 384 ticks, pire baisse −8,9 % vs −17,8 %. **Robustesse** : plateau de 3 à 10 (+3 450 à +3 786), descente régulière ensuite (moyenne 50 : −5 285, retard). **Hors échantillon** : fenêtre choisie sur ticks 1-192 (10), jugée sur 193-384 : +1 681, pire baisse −8,5 % vs −17,8 %. Oracle (triche, 25 ticks d'avance) : +10 907 → le momentum 20 en capte ~15 % (biais du recul) |
 | 2026-11-26 | Signal C | Retour à la moyenne, z-score, fenêtre 20 | +5 542 vs rien faire (7 764 vs 2 223) ; pire baisse −24,7 % vs −58,4 % ; exploite le cycle rapide (~22 ticks) malgré la baisse |
 
 Formule du signal : `z = (prix − moyenne_N) / écart-type_N`, `signal = −z / 2`, borné à [−1, +1].
