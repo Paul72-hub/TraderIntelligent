@@ -1,0 +1,2 @@
+tick,tick_time,run_time,price_A,price_B,price_C,z_A,signal_A,z_B,signal_B,z_C,signal_C,money,units_A,units_B,units_C,value,value_random_trader,value_random_buyer,value_random_seller,reason
+384,2026-11-26T13:46:31Z,2026-11-26T14:35:46Z,4.8403,12.619,1.1713,-0.3,0.15,,0.0,0.2,-0.1,1000.0,1000.0,1000.0,1000.0,19630.6,19204.7,19537.9,18005.8,A sous sa moyenne (z=-0.30) → achat 15 | B gardé (stratégie conservation) | C au-dessus de sa moyenne (z=+0.20) → vente 10

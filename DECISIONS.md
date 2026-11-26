@@ -13,5 +13,16 @@ sans frais. Référence = « ne rien faire ».
 
 Formule du signal : `z = (prix − moyenne_N) / écart-type_N`, `signal = −z / 2`, borné à [−1, +1].
 
+## Incidents
+
+| Date | Incident | Cause | Correction | Vérification |
+|---|---|---|---|---|
+| 2026-11-26 | Run #2 en échec (étape commit/push) | 2 runs lancés à 6 s d'écart modifient la même ligne `updated_at` → conflit au `git pull --rebase` | `concurrency: auto-decide` (file d'attente) | Run #4 : a bien attendu #3… mais échoue encore |
+| 2026-11-26 | Run #4 en échec malgré la file d'attente | Un run manuel est figé sur le commit du clic ; il récupérait l'ancienne version de `main` | `actions/checkout` avec `ref: main` | Runs #5 et #6 (double clic volontaire) : tous deux verts |
+
+Erreurs de l'IA relevées : doute injustifié sur l'existence de `actions/checkout@v7` (vérifié : v7.0.1 existe) ;
+affirmation fausse « une fenêtre de 20 donne un signal quasi nul sur A » (mesuré : +7 713) ;
+commandes Git données dans le mauvais ordre (pull avant commit) ; première correction du conflit incomplète.
+
 Limites connues : fenêtres choisies sur les mêmes données que le test (risque de surapprentissage),
 pas de frais de transaction, impact de nos ordres sur le prix supposé nul.
