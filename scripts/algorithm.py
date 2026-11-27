@@ -103,11 +103,12 @@ def allocate(raw, money, prices_now):
 def make_reason(p, prices, raw, final):
     """Phrase d'une ligne pour le journal de décisions."""
     kind, window = STRATEGIES[p]
+    units = f"{abs(100 * final):.1f}".removesuffix(".0")   # 1.4 reste 1.4 (avant : arrondi à 1)
     if final > 0:
         # comparé au brut ARRONDI : 0.15 vs 0.1501 n'est pas une réduction (bug 27/11)
-        action = f"achat {100 * final:.0f}" + (" (réduit : argent)" if final < round(raw, 3) else "")
+        action = f"achat {units}" + (" (réduit : argent)" if final < round(raw, 3) else "")
     elif final < 0:
-        action = f"vente {-100 * final:.0f}"
+        action = f"vente {units}"
     else:
         action = "rien (pas d'argent)" if raw > 0 else "rien"
     if kind == "zscore":

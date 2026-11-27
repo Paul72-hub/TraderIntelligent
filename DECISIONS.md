@@ -39,7 +39,8 @@ commandes Git données dans le mauvais ordre (pull avant commit) ; première cor
 prédiction « le partage de l'argent coûtera cher » (mesuré : gain combiné ≈ somme des gains séparés) ;
 journal qui gardait le premier calcul d'un tick au lieu du dernier ; tuile « décision en cours » lue dans le journal au lieu de decision.json ;
 « (réduit : argent) » affiché à tort quand seul l'arrondi changeait le signal (0,15 vs 0,1501) ;
-1re réponse à l'écart journal/exécution = un ⚠️ et une phrase longue qui cassait la mise en page, au lieu de corriger le journal depuis la source (historique Git).
+1re réponse à l'écart journal/exécution = un ⚠️ et une phrase longue qui cassait la mise en page, au lieu de corriger le journal depuis la source (historique Git) ;
+journal du dashboard construit par run du bot au lieu de par tick du marché (tick 386 absent, ordres de 2 ticks cumulés en « vente 26 »).
 
 Limites connues : fenêtres choisies sur les mêmes données que le test (risque de surapprentissage),
 pas de frais de transaction, impact de nos ordres sur le prix supposé nul.

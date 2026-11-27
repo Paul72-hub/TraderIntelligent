@@ -103,10 +103,9 @@
   <p class="sub" id="check"></p>
 
   <section class="card">
-    <h2>Journal de décisions — cause → effet</h2>
-    <p class="sub">Pour chaque tick : la décision que le marché a appliquée (calculée par l'algo au tick précédent),
-       les ordres réellement exécutés (variation constatée des unités), et ce que l'algo a apporté sur ce tick
-       (variation de ma valeur − variation de « ne rien faire »). Plus récent en haut ; le dernier tick est lu en direct.</p>
+    <h2>Journal des ordres</h2>
+    <p class="sub">Pour chaque tick du marché : les ordres exécutés et la raison donnée par l'algo
+       (décision calculée avant ce tick). Plus récent en haut.</p>
     <div class="tablewrap"><table id="log"></table></div>
   </section>
 
@@ -301,57 +300,34 @@ async function main() {
       `C ${zLast.C.toFixed(2)} (algo : ${(+lastLog.z_C).toFixed(2)}).`;
   }
 
-  // --- Journal cause → effet ---
-  // Une entrée par tick journalisé + le dernier tick du marché en direct s'il manque.
+  // --- Journal : une ligne par tick du marché ---
+  // À chaque tick T, le marché exécute la décision EN VIGUEUR : la dernière calculée avant T
+  // (dernière ligne du journal dont run_time < heure de T). Ordre = signal × 100 unités.
   const P = ["A", "B", "C"];
-  const holdAt = t => { const p = priceOf[t]; return START.money + P.reduce((s, k) => s + 1000 * p[k], 0); };
-  const entries = hist.map(r => ({
-    tick: +r.tick, time: r.tick_time, value: +r.value,
-    units: Object.fromEntries(P.map(k => [k, +r[`units_${k}`]])),
-    signals: Object.fromEntries(P.map(k => [k, +r[`signal_${k}`]])), reason: r.reason, live: false }));
-  if (!entries.length || entries[entries.length - 1].tick < lastTick.t) {
-    entries.push({ tick: lastTick.t, time: lastTick.timestamp, value: liveRow.me,
-      units: { ...live.me.products }, signals: null, reason: null, live: true });
-  }
-  const sgn = (x, d = 0) => {   // arrondi AVANT le signe : évite « −0,0 » pour −0,02
-    const r = Math.round(x * 10 ** d) / 10 ** d;
-    return (r > 0 ? "+" : r < 0 ? "−" : "") + fmt(Math.abs(r), d);
-  };
-  const cls = x => x > 0.5 ? "up" : x < -0.5 ? "down" : "";
+  const qty = u => fmt(Math.abs(u), Number.isInteger(Math.round(u * 10) / 10) ? 0 : 1);
   const lines = [];
-  for (let i = entries.length - 1; i >= 0; i--) {
-    const cur = entries[i], prev = entries[i - 1];
-    const date = cur.time.replace("T", " ").slice(0, 16) + (cur.live ? " (direct)" : "");
-    if (!prev) {
-      lines.push(`<tr><td class="num">${cur.tick}</td><td class="num">${date}</td>
-        <td colspan="4">Point de départ du journal (portefeuille ${fmt(cur.value)}).</td></tr>`);
-      continue;
-    }
-    const span = cur.tick - prev.tick;
-    // Contrôle d'exécution : ordre attendu = signal × 100 unités, à chaque tick écoulé
-    // (si le bot n'a pas tourné entre 2 ticks, le marché relit la MÊME décision).
-    const orders = P.map(k => {
-      const d = cur.units[k] - prev.units[k];
-      const expected = 100 * prev.signals[k] * span;
-      const ok = Math.abs(d - expected) < 0.2;
-      const txt = Math.abs(d) < 0.05 ? `${k} 0` : `${k} ${d > 0 ? "achat" : "vente"} ${fmt(Math.abs(d), 1)}`;
-      return txt + (ok ? " ✅" : ` <span title="attendu ${sgn(expected, 1)}">⚠️</span>`);
+  const firstTick = hist.length ? +hist[0].tick : lastTick.t;
+  for (const t of ticks.filter(t => t.t > firstTick).reverse()) {
+    const inForce = hist.filter(r => r.run_time < t.timestamp).pop();
+    if (!inForce) continue;
+    const parts = P.map(k => ({ k, u: 100 * +inForce[`signal_${k}`] })).filter(o => Math.abs(o.u) >= 0.05);
+    const orders = parts.length
+      ? parts.map(o => `${o.k} ${o.u > 0 ? "achat" : "vente"} ${qty(o.u)}`).join("<br>")
+      : "aucun ordre";
+    // explication = la phrase de l'algo ; la quantité après « → » est remplacée par la quantité exacte
+    const why = inForce.reason.split(" | ").map(s => {
+      const k = s[0], u = 100 * +inForce[`signal_${k}`];
+      return s.replace(/→ (achat|vente) [\d.]+/, `→ $1 ${qty(u)}`);
     }).join("<br>");
-    const applied = `A ${prev.signals.A.toFixed(2)} · B ${prev.signals.B.toFixed(2)} · C ${prev.signals.C.toFixed(2)}`
-      + `<br><span class="sub">${prev.reason.split(" | ").join("<br>")}</span>`;
-    const dValue = cur.value - prev.value;
-    const dAlgo = dValue - (holdAt(cur.tick) - holdAt(prev.tick));
-    lines.push(`<tr><td class="num">${cur.tick}</td><td class="num">${date}${span > 1 ? `<br><span class="sub">décision appliquée ${span}×</span>` : ""}</td>
-      <td>${applied}</td><td class="num">${orders}</td>
-      <td class="num">${fmt(cur.value)}<br><span class="sub">${sgn(dValue)} ce tick</span></td>
-      <td class="num ${cls(dAlgo)}">${sgn(dAlgo, 1)}</td></tr>`);
+    lines.push(`<tr><td class="num">${t.t}</td><td class="num">${t.timestamp.replace("T", " ").slice(0, 16)}</td>
+      <td class="num">${orders}</td><td>${why}</td></tr>`);
   }
   document.getElementById("log").innerHTML =
-    `<tr><th>Tick</th><th>Date (UTC)</th><th style="min-width:340px">Décision appliquée (calculée au tick précédent)</th>
-     <th>Ordres exécutés (constatés)</th><th>Ma valeur</th><th>Apport de l'algo ce tick</th></tr>` + lines.slice(0, 30).join("");
+    `<tr><th>Tick</th><th>Date (UTC)</th><th>Ordres exécutés</th><th>Explication (décision de l'algo)</th></tr>`
+    + lines.slice(0, 30).join("");
 
   const lag = lastLogged !== null && lastLogged < last.t
-    ? ` ⚠️ Journal de l'algo en retard (dernier tick journalisé : ${lastLogged}) — valeurs en direct quand même.` : "";
+    ? ` Journal de l'algo en retard (dernier tick journalisé : ${lastLogged}) — valeurs en direct quand même.` : "";
   document.getElementById("status").textContent =
     `Dernier tick : ${last.t} (${(timeOf[last.t] || "").replace("T", " ").slice(0, 16)} UTC), valeurs en direct comme le leaderboard — ` +
     `page chargée à ${new Date().toLocaleTimeString("fr-FR")}, actualisation auto toutes les ${REFRESH_MIN} min.${lag}`;
