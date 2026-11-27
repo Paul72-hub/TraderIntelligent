@@ -104,8 +104,9 @@
 
   <section class="card">
     <h2>Journal des ordres</h2>
-    <p class="sub">Pour chaque tick du marché : les ordres exécutés et la raison donnée par l'algo
-       (décision calculée avant ce tick). Plus récent en haut.</p>
+    <p class="sub">Pour chaque tick du marché : les ordres exécutés (signal publié entre parenthèses, unités = signal × 100),
+       la raison donnée par l'algo (décision calculée avant ce tick), puis ma valeur et mon argent après le tick.
+       Plus récent en haut.</p>
     <div class="tablewrap"><table id="log"></table></div>
   </section>
 
@@ -305,14 +306,27 @@ async function main() {
   // (dernière ligne du journal dont run_time < heure de T). Ordre = signal × 100 unités.
   const P = ["A", "B", "C"];
   const qty = u => fmt(Math.abs(u), Number.isInteger(Math.round(u * 10) / 10) ? 0 : 1);
+  const sig = s => (s > 0 ? "+" : "−") + String(Math.abs(s)).replace(".", ",");   // signal tel que publié
+  const sgn = (x, d = 0) => { const r = Math.round(x * 10 ** d) / 10 ** d;
+    return (r > 0 ? "+" : r < 0 ? "−" : "") + fmt(Math.abs(r), d); };
   const lines = [];
   const firstTick = hist.length ? +hist[0].tick : lastTick.t;
-  for (const t of ticks.filter(t => t.t > firstTick).reverse()) {
+  // Portefeuille reconstitué tick par tick : départ = ligne du 1er tick du journal,
+  // puis à chaque tick ordres exécutés au prix de CE tick (comme le marché).
+  const h0 = hist[0];
+  let money = h0 ? +h0.money : 0;
+  const units = Object.fromEntries(P.map(k => [k, h0 ? +h0[`units_${k}`] : 0]));
+  let prevValue = h0 ? +h0.value : 0;
+  for (const t of ticks.filter(t => t.t > firstTick)) {
     const inForce = hist.filter(r => r.run_time < t.timestamp).pop();
     if (!inForce) continue;
-    const parts = P.map(k => ({ k, u: 100 * +inForce[`signal_${k}`] })).filter(o => Math.abs(o.u) >= 0.05);
+    const parts = P.map(k => ({ k, s: +inForce[`signal_${k}`], u: 100 * +inForce[`signal_${k}`] }))
+      .filter(o => Math.abs(o.u) >= 0.05);
+    const moneyBefore = money;
+    for (const o of parts) { units[o.k] += o.u; money -= o.u * t[o.k]; }
+    const value = money + P.reduce((s, k) => s + units[k] * t[k], 0);
     const orders = parts.length
-      ? parts.map(o => `${o.k} ${o.u > 0 ? "achat" : "vente"} ${qty(o.u)}`).join("<br>")
+      ? parts.map(o => `${o.k} ${o.u > 0 ? "achat" : "vente"} ${qty(o.u)} <span class="sub">(${sig(o.s)})</span>`).join("<br>")
       : "aucun ordre";
     // explication = la phrase de l'algo ; la quantité après « → » est remplacée par la quantité exacte
     const why = inForce.reason.split(" | ").map(s => {
@@ -320,10 +334,15 @@ async function main() {
       return s.replace(/→ (achat|vente) [\d.]+/, `→ $1 ${qty(u)}`);
     }).join("<br>");
     lines.push(`<tr><td class="num">${t.t}</td><td class="num">${t.timestamp.replace("T", " ").slice(0, 16)}</td>
-      <td class="num">${orders}</td><td>${why}</td></tr>`);
+      <td class="num">${orders}</td><td>${why}</td>
+      <td class="num">${fmt(value)}<br><span class="sub">${sgn(value - prevValue)} ce tick</span></td>
+      <td class="num">${fmt(money, 1)}<br><span class="sub">${sgn(money - moneyBefore, 1)} ce tick</span></td></tr>`);
+    prevValue = value;
   }
+  lines.reverse();   // plus récent en haut
   document.getElementById("log").innerHTML =
-    `<tr><th>Tick</th><th>Date (UTC)</th><th>Ordres exécutés</th><th>Explication (décision de l'algo)</th></tr>`
+    `<tr><th>Tick</th><th>Date (UTC)</th><th>Ordres exécutés <span class="sub">(signal)</span></th>
+     <th>Explication (décision de l'algo)</th><th>Ma valeur</th><th>Argent</th></tr>`
     + lines.slice(0, 30).join("");
 
   const lag = lastLogged !== null && lastLogged < last.t
