@@ -15,6 +15,13 @@ sans frais. Référence = « ne rien faire ».
 
 Formule du signal : `z = (prix − moyenne_N) / écart-type_N`, `signal = −z / 2`, borné à [−1, +1].
 
+## Vérifications en conditions réelles
+
+| Date | Vérification | Résultat |
+|---|---|---|
+| 2026-11-27 | 1er tick tradé (385) : décision A +0,15 / B +0,695 / C −0,1 | Unités 1 015 / 1 069,5 / 990, argent 51,51 : exécuté exactement. L'argent ne tombe juste qu'avec les prix du tick 385 → **le marché exécute au prix du tick suivant**, hypothèse de tous les backtests confirmée |
+| 2026-11-27 | Contrainte d'argent | Après l'achat de B, argent ≈ réserve : B « rien (pas d'argent) », C réduit à 1,4. Comportement attendu (backtest : 91 ticks « à court » sur 383) |
+
 ## Incidents
 
 | Date | Incident | Cause | Correction | Vérification |

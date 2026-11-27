@@ -1,0 +1,288 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Trader Intelligent</title>
+<style>
+  :root {
+    color-scheme: light;
+    --page: #f9f9f9; --surface: #ffffff;
+    --ink: #191919; --ink-2: #666666;
+    --grid: #e7e7e7; --axis: #c2c2c2; --border: rgba(11,11,11,0.10);
+    --me: #257de0; --s2: #f47230; --s3: #00b894; --s4: #f2a600;
+    --ref: #666666; --band: rgba(37,125,224,0.12);
+    --good: #006c10; --bad: #dc3c3d;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      color-scheme: dark;
+      --page: #0b0b0b; --surface: #191919;
+      --ink: #efefef; --ink-2: #9c9c9c;
+      --grid: #303030; --axis: #474747; --border: rgba(255,255,255,0.10);
+      --me: #338ced; --s2: #e76624; --s3: #00a888; --s4: #d28e05;
+      --ref: #9c9c9c; --band: rgba(51,140,237,0.18);
+      --good: #53c556; --bad: #eb6263;
+    }
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --page: #0b0b0b; --surface: #191919;
+    --ink: #efefef; --ink-2: #9c9c9c;
+    --grid: #303030; --axis: #474747; --border: rgba(255,255,255,0.10);
+    --me: #338ced; --s2: #e76624; --s3: #00a888; --s4: #d28e05;
+    --ref: #9c9c9c; --band: rgba(51,140,237,0.18);
+    --good: #53c556; --bad: #eb6263;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--page); color: var(--ink);
+         font-family: system-ui, -apple-system, "Segoe UI", sans-serif; line-height: 1.45; }
+  main { max-width: 1100px; margin: 0 auto; padding: 24px 16px 48px; }
+  h1 { font-size: 1.5rem; margin: 0 0 4px; }
+  h2 { font-size: 1.1rem; margin: 0 0 2px; }
+  .sub { color: var(--ink-2); margin: 0 0 12px; font-size: .9rem; }
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
+          padding: 16px; margin-bottom: 16px; }
+  .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 12px; margin: 16px 0; }
+  .tile { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; }
+  .tile .label { color: var(--ink-2); font-size: .8rem; }
+  .tile .val { font-size: 1.6rem; font-weight: 600; }
+  .tile .hint { color: var(--ink-2); font-size: .8rem; }
+  .up { color: var(--good); } .down { color: var(--bad); }
+  .chart { position: relative; height: 300px; }
+  .grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 16px; }
+  .grid2 .card { margin-bottom: 0; }
+  table { width: 100%; border-collapse: collapse; font-size: .85rem; }
+  th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--grid); vertical-align: top; }
+  th { color: var(--ink-2); font-weight: 600; }
+  td.num { font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .tablewrap { overflow-x: auto; }
+  #status { color: var(--ink-2); font-size: .85rem; }
+  footer { color: var(--ink-2); font-size: .8rem; margin-top: 24px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Trader Intelligent</h1>
+  <p class="sub">ENSIM Trade Center — trader <code>paul_transon</code>. Stratégie : retour à la moyenne (z-score)
+     sur A (fenêtre 48) et C (fenêtre 20), suivi de tendance (momentum 10) sur B ; argent servi A → C → B.
+     <span id="status">Chargement…</span></p>
+
+  <div class="tiles" id="tiles"></div>
+
+  <section class="card">
+    <h2>Performance — ma valeur face aux baselines</h2>
+    <p class="sub">Valeur totale = argent + unités × prix du tick. Tous les traders partent de 17 374 au tick 1.
+       « Ne rien faire » = garder le panier de départ.</p>
+    <div class="chart"><canvas id="perf"></canvas></div>
+  </section>
+
+  <section class="card">
+    <h2>Risque — drawdown (écart à son propre plus haut)</h2>
+    <p class="sub">0 % = au sommet ; −10 % = 10 % sous le meilleur niveau atteint jusque-là.</p>
+    <div class="chart"><canvas id="dd"></canvas></div>
+  </section>
+
+  <div class="grid2">
+    <section class="card">
+      <h2>Signal A — prix et bandes (fenêtre 48)</h2>
+      <p class="sub">Sous la moyenne → achat ; au-dessus → vente. Sur une bande (±2σ) → ordre maximal (100 unités).</p>
+      <div class="chart"><canvas id="sigA"></canvas></div>
+    </section>
+    <section class="card">
+      <h2>Signal B — prix et moyenne (momentum 10)</h2>
+      <p class="sub">Prix au-dessus de la moyenne ET moyenne en hausse → achat ; en dessous ET en baisse → vente ; sinon rien.</p>
+      <div class="chart"><canvas id="priceB"></canvas></div>
+    </section>
+    <section class="card">
+      <h2>Signal C — prix et bandes (fenêtre 20)</h2>
+      <p class="sub">Même règle ; la moyenne courte suit la baisse et isole le petit cycle.</p>
+      <div class="chart"><canvas id="sigC"></canvas></div>
+    </section>
+  </div>
+  <p class="sub" id="check"></p>
+
+  <section class="card">
+    <h2>Journal de décisions</h2>
+    <p class="sub">Une ligne par tick, écrite automatiquement par <code>scripts/algorithm.py</code>. Plus récent en haut.
+       Le tick 384 a été enregistré avec l'ancienne version (B conservé) ; le momentum sur B s'applique à partir du tick suivant.</p>
+    <div class="tablewrap"><table id="log"></table></div>
+  </section>
+
+  <footer>Données : <code>data/history.csv</code> (depuis le 26/11), <code>data/backfill.csv</code> (reconstruit depuis
+    l'historique Git de l'organisateur), <code>market.json</code>. Seuls mon portefeuille et ceux des 3 baselines sont lus.</footer>
+</main>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script>
+const RAW = "https://raw.githubusercontent.com/Paul72-hub/TraderIntelligent/main";
+const MARKET_URL = "https://raw.githubusercontent.com/exofri/ensim-trade-center/refs/heads/main/docs/data/market.json";
+const WINDOWS = { A: 48, C: 20 };   // mêmes réglages que scripts/algorithm.py
+const START = { money: 1000, A: 1000, B: 1000, C: 1000 };
+
+const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+const fmt = (x, d = 0) => x.toLocaleString("fr-FR", { minimumFractionDigits: d, maximumFractionDigits: d });
+
+function parseCSV(text) {
+  const lines = text.trim().split(/\r?\n/);
+  const head = lines.shift().split(",");
+  return lines.map(l => {
+    // la colonne "reason" (dernière) peut contenir des virgules : on la recolle
+    const parts = l.split(",");
+    const o = {};
+    head.forEach((h, i) => o[h] = i < head.length - 1 ? parts[i] : parts.slice(i).join(","));
+    return o;
+  });
+}
+const nocache = u => u + (u.includes("?") ? "&" : "?") + "t=" + Date.now();
+const getText = u => fetch(nocache(u)).then(r => { if (!r.ok) throw new Error(u + " → " + r.status); return r.text(); });
+
+// même calcul que zscore() dans algorithm.py
+function stats(prices, w) {
+  const r = prices.slice(-w), m = r.reduce((a, b) => a + b, 0) / w;
+  const sd = Math.sqrt(r.reduce((a, b) => a + (b - m) ** 2, 0) / w);
+  return { m, sd };
+}
+
+function drawdown(values) {
+  let peak = -Infinity;
+  return values.map(v => { peak = Math.max(peak, v); return 100 * (v - peak) / peak; });
+}
+
+function baseOptions(yTitle, ySuffix = "") {
+  return {
+    responsive: true, maintainAspectRatio: false, animation: false,
+    interaction: { mode: "index", intersect: false },
+    plugins: {
+      legend: { labels: { color: css("--ink-2"), boxWidth: 14, boxHeight: 2 } },
+      tooltip: { callbacks: {} }
+    },
+    scales: {
+      x: { type: "linear", title: { display: true, text: "tick", color: css("--ink-2") },
+           ticks: { color: css("--ink-2") }, grid: { color: css("--grid") }, border: { color: css("--axis") } },
+      y: { title: { display: true, text: yTitle, color: css("--ink-2") },
+           ticks: { color: css("--ink-2"), callback: v => fmt(v, Math.abs(v) < 20 ? 1 : 0) + ySuffix },
+           grid: { color: css("--grid") }, border: { color: css("--axis") } }
+    },
+    elements: { point: { radius: 0, hoverRadius: 4 }, line: { borderWidth: 2 } }
+  };
+}
+
+function line(label, data, color, extra = {}) {
+  return { label, data, borderColor: color, backgroundColor: color, borderWidth: 2, pointRadius: 0, ...extra };
+}
+
+async function main() {
+  const [histTxt, backTxt, marketTxt, decisionTxt] = await Promise.all([
+    getText(RAW + "/data/history.csv"), getText(RAW + "/data/backfill.csv"), getText(MARKET_URL),
+    getText(RAW + "/decision.json")]);
+  const hist = parseCSV(histTxt), back = parseCSV(backTxt), market = JSON.parse(marketTxt);
+  const decision = JSON.parse(decisionTxt);   // la décision EN COURS (le journal n'a qu'1 ligne par tick)
+  const ticks = market.history;
+  const timeOf = Object.fromEntries(ticks.map(t => [t.t, t.timestamp]));
+
+  // --- Série de performance : backfill puis history (history prioritaire) ---
+  const byTick = new Map();
+  for (const r of back) byTick.set(+r.tick, r);
+  for (const r of hist) byTick.set(+r.tick, r);
+  const priceOf = Object.fromEntries(ticks.map(t => [t.t, t]));
+  const rows = [...byTick.values()].sort((a, b) => a.tick - b.tick).map(r => {
+    const p = priceOf[+r.tick];
+    const hold = r.value_hold ? +r.value_hold : START.money + START.A * p.A + START.B * p.B + START.C * p.C;
+    return { t: +r.tick, me: +r.value, hold, rt: +r.value_random_trader, rb: +r.value_random_buyer, rs: +r.value_random_seller };
+  });
+  const pts = k => rows.map(r => ({ x: r.t, y: r[k] }));
+  const series = [
+    ["Moi", "me", css("--me"), { borderWidth: 3 }],
+    ["Ne rien faire", "hold", css("--ref"), { borderDash: [6, 4] }],
+    ["random_trader", "rt", css("--s2"), {}],
+    ["random_buyer", "rb", css("--s3"), {}],
+    ["random_seller", "rs", css("--s4"), {}],
+  ];
+  const dateCb = { title: items => `tick ${items[0].parsed.x} — ${(timeOf[items[0].parsed.x] || "").replace("T", " ").slice(0, 16)} UTC` };
+
+  const perfOpt = baseOptions("valeur totale");
+  perfOpt.plugins.tooltip.callbacks = { ...dateCb, label: c => `${c.dataset.label} : ${fmt(c.parsed.y)}` };
+  new Chart(document.getElementById("perf"), { type: "line", options: perfOpt,
+    data: { datasets: series.map(([l, k, c, e]) => line(l, pts(k), c, e)) } });
+
+  const ddOpt = baseOptions("drawdown", " %");
+  ddOpt.plugins.tooltip.callbacks = { ...dateCb, label: c => `${c.dataset.label} : ${fmt(c.parsed.y, 1)} %` };
+  new Chart(document.getElementById("dd"), { type: "line", options: ddOpt,
+    data: { datasets: series.map(([l, k, c, e]) => {
+      const dd = drawdown(rows.map(r => r[k]));
+      return line(l, rows.map((r, i) => ({ x: r.t, y: dd[i] })), c, e);
+    }) } });
+
+  // --- Signal A et C : prix, moyenne, bandes ±2σ (recalculés comme dans algorithm.py) ---
+  const zLast = {};
+  for (const p of ["A", "C"]) {
+    const w = WINDOWS[p], price = ticks.map(t => t[p]);
+    const mean = [], up = [], lo = [];
+    for (let i = w - 1; i < price.length; i++) {
+      const { m, sd } = stats(price.slice(0, i + 1), w);
+      mean.push({ x: ticks[i].t, y: m }); up.push({ x: ticks[i].t, y: m + 2 * sd }); lo.push({ x: ticks[i].t, y: m - 2 * sd });
+      if (i === price.length - 1) zLast[p] = (price[i] - m) / sd;
+    }
+    const opt = baseOptions("prix " + p);
+    opt.plugins.tooltip.callbacks = { ...dateCb, label: c => `${c.dataset.label} : ${fmt(c.parsed.y, 3)}` };
+    opt.plugins.legend.labels.filter = it => it.text !== "_lo";
+    new Chart(document.getElementById("sig" + p), { type: "line", options: opt, data: { datasets: [
+      line("Bande ±2σ", up, "transparent", { backgroundColor: css("--band"), fill: "+1", borderWidth: 0 }),
+      line("_lo", lo, "transparent", { borderWidth: 0 }),
+      line("Moyenne " + w, mean, css("--ref"), { borderDash: [4, 3] }),
+      line("Prix " + p, ticks.map(t => ({ x: t.t, y: t[p] })), css("--me")),
+    ] } });
+  }
+
+  // --- B : prix + moyenne 10 (même calcul que momentum() dans algorithm.py) ---
+  const pB = ticks.map(t => t.B), maB = [];
+  for (let i = 9; i < pB.length; i++) maB.push({ x: ticks[i].t, y: pB.slice(i - 9, i + 1).reduce((a, b) => a + b, 0) / 10 });
+  const optB = baseOptions("prix B");
+  optB.plugins.tooltip.callbacks = { ...dateCb, label: c => `${c.dataset.label} : ${fmt(c.parsed.y, 3)}` };
+  new Chart(document.getElementById("priceB"), { type: "line", options: optB, data: { datasets: [
+    line("Moyenne 10", maB, css("--ref"), { borderDash: [4, 3] }),
+    line("Prix B", ticks.map(t => ({ x: t.t, y: t.B })), css("--me")),
+  ] } });
+
+  // --- Tuiles ---
+  const last = rows[rows.length - 1], first = rows[0];
+  const gap = Math.round(last.me - last.hold);   // arrondi : évite l'affichage « −0 » pour −0,02
+  const rank = 1 + [last.rt, last.rb, last.rs].filter(v => v > last.me).length;
+  const myDD = drawdown(rows.map(r => r.me)), holdDD = drawdown(rows.map(r => r.hold));
+  const lastLog = hist[hist.length - 1];
+  const tiles = [
+    ["Ma valeur (tick " + last.t + ")", fmt(last.me), `${last.me >= first.me ? "+" : ""}${fmt(100 * (last.me / first.me - 1), 1)} % depuis le tick 1`, ""],
+    ["Écart vs ne rien faire", (gap >= 0 ? "+" : "") + fmt(gap), "ce que l'algo a apporté", gap > 0 ? "up" : gap < 0 ? "down" : ""],
+    ["Rang vs 3 baselines", rank + " / 4", rank === 1 ? "devant les trois" : "", ""],
+    ["Pire baisse (moi)", fmt(Math.min(...myDD), 1) + " %", `ne rien faire : ${fmt(Math.min(...holdDD), 1)} %`, ""],
+    ["Décision en cours", `A ${decision.A.toFixed(2)} · B ${decision.B.toFixed(2)} · C ${decision.C.toFixed(2)}`,
+      `×100 unités ; + achat, − vente — calculée ${decision.updated_at.replace("T", " ").slice(0, 16)} UTC`, ""],
+  ];
+  document.getElementById("tiles").innerHTML = tiles.map(([l, v, h, cls]) =>
+    `<div class="tile"><div class="label">${l}</div><div class="val ${cls}">${v}</div><div class="hint">${h}</div></div>`).join("");
+
+  // --- Contrôle de cohérence : z recalculé ici vs z enregistré par l'algo ---
+  if (+lastLog.tick === ticks[ticks.length - 1].t) {
+    document.getElementById("check").textContent =
+      `Contrôle : z recalculé par la page au tick ${lastLog.tick} — A ${zLast.A.toFixed(2)} (algo : ${(+lastLog.z_A).toFixed(2)}), ` +
+      `C ${zLast.C.toFixed(2)} (algo : ${(+lastLog.z_C).toFixed(2)}).`;
+  }
+
+  // --- Journal ---
+  const head = "<tr><th>Tick</th><th>Date (UTC)</th><th>Prix A / B / C</th><th>Signal A</th><th>Signal C</th><th>Ma valeur</th><th>Raison</th></tr>";
+  const body = hist.slice().reverse().slice(0, 30).map(r =>
+    `<tr><td class="num">${r.tick}</td><td class="num">${r.tick_time.replace("T", " ").slice(0, 16)}</td>
+     <td class="num">${(+r.price_A).toFixed(2)} / ${(+r.price_B).toFixed(2)} / ${(+r.price_C).toFixed(2)}</td>
+     <td class="num">${(+r.signal_A).toFixed(2)}</td><td class="num">${(+r.signal_C).toFixed(2)}</td>
+     <td class="num">${fmt(+r.value)}</td><td>${r.reason.split(" | ").join("<br>")}</td></tr>`).join("");
+  document.getElementById("log").innerHTML = head + body;
+
+  document.getElementById("status").textContent =
+    `Dernier tick : ${last.t} (${(timeOf[last.t] || "").replace("T", " ").slice(0, 16)} UTC) — page chargée à ${new Date().toLocaleTimeString("fr-FR")}.`;
+}
+
+main().catch(e => { document.getElementById("status").textContent = "Erreur de chargement : " + e.message; });
+</script>
+</body>
+</html>
