@@ -126,21 +126,25 @@ def portfolio_value(holdings, last_prices):
     return holdings["money"] + sum(q * last_prices[p] for p, q in holdings["products"].items())
 
 def log_history(row):
-    """Ajoute une ligne à data/history.csv, sauf si ce tick y est déjà (1 ligne par tick)."""
+    """1 ligne par tick dans data/history.csv. Si le tick est déjà enregistré, la ligne
+    est REMPLACÉE : elle garde la DERNIÈRE décision calculée, celle que le marché lira
+    au tick suivant (incident 27/11 : la 1re version gardait un calcul périmé)."""
     HISTORY_CSV.parent.mkdir(exist_ok=True)
-    exists = HISTORY_CSV.exists()
-    if exists:
+    rows = []
+    if HISTORY_CSV.exists():
         with open(HISTORY_CSV, encoding="utf-8", newline="") as f:
             rows = list(csv.DictReader(f))
-        if rows and rows[-1]["tick"] == str(row["tick"]):
-            print(f"Tick {row['tick']} déjà enregistré, historique inchangé")
-            return
-    with open(HISTORY_CSV, "a", encoding="utf-8", newline="") as f:
+    row = {k: str(v) for k, v in row.items()}
+    if rows and rows[-1]["tick"] == row["tick"]:
+        rows[-1] = row
+        print(f"Tick {row['tick']} déjà enregistré : ligne mise à jour (dernière décision)")
+    else:
+        rows.append(row)
+        print(f"Ajouté au journal : tick {row['tick']}")
+    with open(HISTORY_CSV, "w", encoding="utf-8", newline="") as f:
         writer = csv.DictWriter(f, fieldnames=list(row.keys()))
-        if not exists:
-            writer.writeheader()
-        writer.writerow(row)
-    print(f"Ajouté au journal : tick {row['tick']}")
+        writer.writeheader()
+        writer.writerows(rows)
 
 def main():
     market = fetch_json(MARKET_URL)

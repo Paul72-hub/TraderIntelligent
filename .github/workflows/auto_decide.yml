@@ -2,7 +2,9 @@ name: Auto decide
 
 "on":
   schedule:
-    - cron: "*/30 * * * *"
+    # minutes 7 et 37 plutôt que :00/:30 (créneaux surchargés, runs très souvent sautés :
+    # 2 runs seulement en 19 h constatés le 26-27/11)
+    - cron: "7,37 * * * *"
   workflow_dispatch: {}
 
 permissions:

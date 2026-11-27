@@ -29,9 +29,14 @@ Formule du signal : `z = (prix − moyenne_N) / écart-type_N`, `signal = −z /
 | 2026-11-26 | Run #2 en échec (étape commit/push) | 2 runs lancés à 6 s d'écart modifient la même ligne `updated_at` → conflit au `git pull --rebase` | `concurrency: auto-decide` (file d'attente) | Run #4 : a bien attendu #3… mais échoue encore |
 | 2026-11-26 | Run #4 en échec malgré la file d'attente | Un run manuel est figé sur le commit du clic ; il récupérait l'ancienne version de `main` | `actions/checkout` avec `ref: main` | Runs #5 et #6 (double clic volontaire) : tous deux verts |
 
+| 2026-11-27 | Cron très peu fiable : 2 runs seulement entre le 26/11 22:00 et le 27/11 09:49 (au lieu de ~38) ; tick 386 non journalisé | Créneaux :00/:30 surchargés chez GitHub | Cron déplacé à `7,37 * * * *` ; « Run workflow » manuel après un tick en secours | À observer |
+| 2026-11-27 | La ligne « tick 384 » du journal indique « B gardé » alors que la décision exécutée au tick 385 était B +0,695 | `log_history` ignorait les runs suivants d'un même tick → le journal gardait le 1er calcul, pas le dernier | La ligne du tick est désormais **remplacée** par le dernier calcul | Ligne 384 laissée telle quelle (trace de l'incident) |
+
 Erreurs de l'IA relevées : doute injustifié sur l'existence de `actions/checkout@v7` (vérifié : v7.0.1 existe) ;
 affirmation fausse « une fenêtre de 20 donne un signal quasi nul sur A » (mesuré : +7 713) ;
-commandes Git données dans le mauvais ordre (pull avant commit) ; première correction du conflit incomplète.
+commandes Git données dans le mauvais ordre (pull avant commit) ; première correction du conflit incomplète ;
+prédiction « le partage de l'argent coûtera cher » (mesuré : gain combiné ≈ somme des gains séparés) ;
+journal qui gardait le premier calcul d'un tick au lieu du dernier ; tuile « décision en cours » lue dans le journal au lieu de decision.json.
 
 Limites connues : fenêtres choisies sur les mêmes données que le test (risque de surapprentissage),
 pas de frais de transaction, impact de nos ordres sur le prix supposé nul.
