@@ -86,9 +86,43 @@
   </section>
 
   <section class="card">
-    <h2>Risque — drawdown (écart à son propre plus haut)</h2>
-    <p class="sub">0 % = au sommet ; −10 % = 10 % sous le meilleur niveau atteint jusque-là.</p>
+    <h2>Risque — drawdown depuis le début de mon algo (écart à son propre plus haut)</h2>
+    <p class="sub">Mesuré à partir du tick 384, premier tick où mon algo a décidé : 0 % = au plus haut depuis ce tick ;
+       −2 % = 2 % sous le meilleur niveau atteint depuis. Même règle pour les autres courbes.</p>
     <div class="chart"><canvas id="dd"></canvas></div>
+  </section>
+
+  <section class="card">
+    <h2>Mes choix de conception</h2>
+    <p class="sub">Chaque choix a été testé par backtest sur l'historique du marché (387 ticks) : décision prise avec les seuls
+       prix passés, ordre exécuté au tick suivant, 100 unités max par tick, pas de vente à découvert, réserve de 50,
+       sans frais. Référence = « ne rien faire » (garder le panier de départ).</p>
+    <div class="tablewrap"><table>
+      <tr><th>Décision</th><th>Options testées</th><th>Choix</th><th>Chiffres mesurés</th></tr>
+      <tr><td>Objectif</td><td>Gain maximal / risque minimal</td><td>Gain maximal</td>
+          <td>Le risque reste mesuré et affiché (drawdown), pour vérifier que le gain ne vient pas d'un pari dangereux</td></tr>
+      <tr><td>Produit A<br><span class="sub">cycle régulier ~48 ticks, sans tendance</span></td>
+          <td>Garder ; retour à la moyenne (z-score) fenêtres 20 et 48</td><td>Z-score, fenêtre 48</td>
+          <td>+8 415 vs ne rien faire (14 215 contre 5 800) ; pire baisse −21,3 % contre −24,3 %.
+              Fenêtre ≈ durée du cycle ; la fenêtre 20 marche aussi (+7 713)</td></tr>
+      <tr><td>Produit B<br><span class="sub">tendance haussière par vagues ~100 ticks</span></td>
+          <td>Z-score ; garder ; momentum fenêtres 3 à 50 ; oracle (triche, sert de plafond)</td><td>Momentum, fenêtre 10</td>
+          <td>Z-score perd dans tous les réglages (−5 963 à −102). Momentum 10 : +3 512 vs garder ; pire baisse −8,9 % contre −17,8 %.
+              Robuste : plateau de 3 à 10 (+3 450 à +3 786). Hors échantillon (choisi sur la 1re moitié, jugé sur la 2e) : +1 681</td></tr>
+      <tr><td>Produit C<br><span class="sub">baisse + cycle rapide ~22 ticks</span></td>
+          <td>Garder ; z-score fenêtre 20</td><td>Z-score, fenêtre 20</td>
+          <td>+5 542 vs ne rien faire (7 764 contre 2 223) ; pire baisse −24,7 % contre −58,4 %</td></tr>
+      <tr><td>Partage de l'argent<br><span class="sub">quand plusieurs achats en même temps</span></td>
+          <td>0. chacun pour soi ; a. parts égales ; b. proportionnel au signal ; c. priorité A → C → B</td><td>c. Priorité A → C → B</td>
+          <td>Portefeuille complet : c = +17 035, a = +16 587, b = +16 254. La règle 0 (+17 479) suppose un comportement
+              du marché à court d'argent qu'on ne peut pas vérifier : écartée</td></tr>
+      <tr><td>Réserve d'argent</td><td>Code fourni par l'organisateur</td><td>50 gardés, achats réduits (pas annulés)</td>
+          <td>Couvre l'écart entre le prix du calcul et le prix d'exécution (tick suivant)</td></tr>
+      <tr><td>Confidentialité</td><td>Lire tous les portefeuilles / seulement le mien et les baselines</td>
+          <td>Seulement le mien + les 3 baselines</td><td>Les positions des autres étudiants sont annoncées privées</td></tr>
+    </table></div>
+    <p class="sub" style="margin-top:8px">Limites : fenêtres choisies sur les mêmes données que le test (risque de surapprentissage,
+       d'où le test hors échantillon sur B), pas de frais de transaction, impact de mes ordres sur le prix supposé nul.</p>
   </section>
 
   <div class="grid2">
@@ -174,7 +208,9 @@ function stats(prices, w) {
 
 function drawdown(values) {
   let peak = -Infinity;
-  return values.map(v => { peak = Math.max(peak, v); return 100 * (v - peak) / peak; });
+  return values.map(v => {   // valeur inconnue (null) → point vide, le plus haut n'est pas touché
+    if (v == null) return null;
+    peak = Math.max(peak, v); return 100 * (v - peak) / peak; });
 }
 
 function baseOptions(yTitle, ySuffix = "") {
@@ -197,7 +233,7 @@ function baseOptions(yTitle, ySuffix = "") {
 }
 
 function line(label, data, color, extra = {}) {
-  return { label, data, borderColor: color, backgroundColor: color, borderWidth: 2, pointRadius: 0, ...extra };
+  return { label, data, borderColor: color, backgroundColor: color, borderWidth: 2, pointRadius: 0, spanGaps: true, ...extra };
 }
 
 async function main() {
@@ -212,6 +248,27 @@ async function main() {
   const ticks = market.history;
   const timeOf = Object.fromEntries(ticks.map(t => [t.t, t.timestamp]));
 
+  // --- Portefeuille reconstitué tick par tick depuis le 1er tick du journal ---
+  // À chaque tick T, le marché exécute la décision EN VIGUEUR (dernière ligne du journal calculée
+  // avant T) : ordre = signal × 100 unités, au prix de T. Vérifié = portefeuille réel (verif_journal.py).
+  const P = ["A", "B", "C"];
+  const replay = [];
+  if (hist.length) {
+    const h0 = hist[0];
+    let money = +h0.money;
+    const units = Object.fromEntries(P.map(k => [k, +h0[`units_${k}`]]));
+    for (const t of ticks.filter(t => t.t > +h0.tick)) {
+      const inForce = hist.filter(r => r.run_time < t.timestamp).pop();
+      if (!inForce) continue;
+      const parts = P.map(k => ({ k, s: +inForce[`signal_${k}`], u: 100 * +inForce[`signal_${k}`] }))
+        .filter(o => Math.abs(o.u) >= 0.05);
+      const moneyBefore = money;
+      for (const o of parts) { units[o.k] += o.u; money -= o.u * t[o.k]; }
+      replay.push({ t, inForce, parts, money, moneyBefore,
+        value: money + P.reduce((s, k) => s + units[k] * t[k], 0) });
+    }
+  }
+
   // --- Série de performance : backfill puis history (history prioritaire) ---
   const byTick = new Map();
   for (const r of back) byTick.set(+r.tick, r);
@@ -222,6 +279,14 @@ async function main() {
     const hold = r.value_hold ? +r.value_hold : START.money + START.A * p.A + START.B * p.B + START.C * p.C;
     return { t: +r.tick, me: +r.value, hold, rt: +r.value_random_trader, rb: +r.value_random_buyer, rs: +r.value_random_seller };
   });
+  // Ticks où le bot n'a pas tourné (ex. 386) : ma valeur reconstituée ; baselines inconnues (trou)
+  for (const r of replay) {
+    if (byTick.has(r.t.t)) continue;
+    const p = r.t;
+    rows.push({ t: p.t, me: r.value, hold: START.money + START.A * p.A + START.B * p.B + START.C * p.C,
+      rt: null, rb: null, rs: null });
+  }
+  rows.sort((a, b) => a.t - b.t);
   // Point « en direct » : valeurs au DERNIER tick du marché, calculées comme le leaderboard
   // (holdings de l'organisateur × prix du tick), sans attendre que le bot l'ait journalisé.
   const lastTick = ticks[ticks.length - 1];
@@ -248,10 +313,13 @@ async function main() {
 
   const ddOpt = baseOptions("drawdown", " %");
   ddOpt.plugins.tooltip.callbacks = { ...dateCb, label: c => `${c.dataset.label} : ${fmt(c.parsed.y, 1)} %` };
+  // Drawdown mesuré depuis le début de MON algo (1er tick du journal) : le « plus haut » repart de là
+  const algoStart = hist.length ? +hist[0].tick : rows[0].t;
+  const ddRows = rows.filter(r => r.t >= algoStart);
   new Chart(document.getElementById("dd"), { type: "line", options: ddOpt,
     data: { datasets: series.map(([l, k, c, e]) => {
-      const dd = drawdown(rows.map(r => r[k]));
-      return line(l, rows.map((r, i) => ({ x: r.t, y: dd[i] })), c, e);
+      const dd = drawdown(ddRows.map(r => r[k]));
+      return line(l, ddRows.map((r, i) => ({ x: r.t, y: dd[i] })), c, e);
     }) } });
 
   // --- Signal A et C : prix, moyenne, bandes ±2σ (recalculés comme dans algorithm.py) ---
@@ -289,13 +357,13 @@ async function main() {
   const last = rows[rows.length - 1], first = rows[0];
   const gap = Math.round(last.me - last.hold);   // arrondi : évite l'affichage « −0 » pour −0,02
   const rank = 1 + [last.rt, last.rb, last.rs].filter(v => v > last.me).length;
-  const myDD = drawdown(rows.map(r => r.me)), holdDD = drawdown(rows.map(r => r.hold));
+  const myDD = drawdown(ddRows.map(r => r.me)), holdDD = drawdown(ddRows.map(r => r.hold));
   const lastLog = hist[hist.length - 1];
   const tiles = [
     ["Ma valeur (tick " + last.t + ")", fmt(last.me), `${last.me >= first.me ? "+" : ""}${fmt(100 * (last.me / first.me - 1), 1)} % depuis le tick 1`, ""],
     ["Écart vs ne rien faire", (gap >= 0 ? "+" : "") + fmt(gap), "ce que l'algo a apporté", gap > 0 ? "up" : gap < 0 ? "down" : ""],
     ["Rang vs 3 baselines", rank + " / 4", rank === 1 ? "devant les trois" : "", ""],
-    ["Pire baisse (moi)", fmt(Math.min(...myDD), 1) + " %", `ne rien faire : ${fmt(Math.min(...holdDD), 1)} %`, ""],
+    ["Pire baisse depuis le tick " + algoStart, fmt(Math.min(...myDD), 1) + " %", `ne rien faire : ${fmt(Math.min(...holdDD), 1)} %`, ""],
     ["Décision en cours", `A ${decision.A.toFixed(2)} · B ${decision.B.toFixed(2)} · C ${decision.C.toFixed(2)}`,
       `×100 unités ; + achat, − vente — calculée ${decision.updated_at.replace("T", " ").slice(0, 16)} UTC`, ""],
   ];
@@ -309,10 +377,7 @@ async function main() {
       `C ${zLast.C.toFixed(2)} (algo : ${(+lastLog.z_C).toFixed(2)}).`;
   }
 
-  // --- Journal : une ligne par tick du marché ---
-  // À chaque tick T, le marché exécute la décision EN VIGUEUR : la dernière calculée avant T
-  // (dernière ligne du journal dont run_time < heure de T). Ordre = signal × 100 unités.
-  const P = ["A", "B", "C"];
+  // --- Journal : une ligne par tick du marché (données : replay, plus haut) ---
   const qty = u => fmt(Math.abs(u), Number.isInteger(Math.round(u * 10) / 10) ? 0 : 1);
   const sig = s => (s > 0 ? "+" : "−") + String(Math.abs(s)).replace(".", ",");   // signal tel que publié
   const sgn = (x, d = 0) => { const r = Math.round(x * 10 ** d) / 10 ** d;
@@ -375,21 +440,8 @@ async function main() {
   }
 
   const lines = [];
-  const firstTick = hist.length ? +hist[0].tick : lastTick.t;
-  // Portefeuille reconstitué tick par tick : départ = ligne du 1er tick du journal,
-  // puis à chaque tick ordres exécutés au prix de CE tick (comme le marché).
-  const h0 = hist[0];
-  let money = h0 ? +h0.money : 0;
-  const units = Object.fromEntries(P.map(k => [k, h0 ? +h0[`units_${k}`] : 0]));
-  let prevValue = h0 ? +h0.value : 0;
-  for (const t of ticks.filter(t => t.t > firstTick)) {
-    const inForce = hist.filter(r => r.run_time < t.timestamp).pop();
-    if (!inForce) continue;
-    const parts = P.map(k => ({ k, s: +inForce[`signal_${k}`], u: 100 * +inForce[`signal_${k}`] }))
-      .filter(o => Math.abs(o.u) >= 0.05);
-    const moneyBefore = money;
-    for (const o of parts) { units[o.k] += o.u; money -= o.u * t[o.k]; }
-    const value = money + P.reduce((s, k) => s + units[k] * t[k], 0);
+  let prevValue = hist.length ? +hist[0].value : 0;
+  for (const { t, inForce, parts, money, moneyBefore, value } of replay) {   // reconstitution faite plus haut
     const orders = parts.length
       ? parts.map(o => `${o.k} ${o.u > 0 ? "achat" : "vente"} ${qty(o.u)} <span class="sub">(${sig(o.s)})</span>`).join("<br>")
       : "aucun ordre";
