@@ -57,6 +57,14 @@
   th { color: var(--ink-2); font-weight: 600; }
   td.num { font-variant-numeric: tabular-nums; white-space: nowrap; }
   .tablewrap { overflow-x: auto; }
+  tr.row { cursor: pointer; }
+  tr.row:hover td { background: var(--grid); }
+  .more { color: var(--me); font-size: .8rem; text-decoration: underline; }
+  tr.detail > td { background: var(--page); padding: 12px; }
+  .calc { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 12px; }
+  .calc h3 { font-size: .9rem; margin: 0 0 6px; }
+  .calc td { white-space: normal; padding: 4px 6px; }
+  .calc td:first-child { color: var(--ink-2); width: 45%; }
   #status { color: var(--ink-2); font-size: .85rem; }
   footer { color: var(--ink-2); font-size: .8rem; margin-top: 24px; }
 </style>
@@ -309,6 +317,63 @@ async function main() {
   const sig = s => (s > 0 ? "+" : "−") + String(Math.abs(s)).replace(".", ",");   // signal tel que publié
   const sgn = (x, d = 0) => { const r = Math.round(x * 10 ** d) / 10 ** d;
     return (r > 0 ? "+" : r < 0 ? "−" : "") + fmt(Math.abs(r), d); };
+  // --- Détail d'une décision : refait le calcul de algorithm.py, étape par étape ---
+  const STRAT = { A: ["zscore", 48], B: ["momentum", 10], C: ["zscore", 20] };
+  const LAG = 5, RESERVE = 50, PRIORITY = ["A", "C", "B"];
+  const mean = a => a.reduce((s, x) => s + x, 0) / a.length;
+  const pstdev = a => { const m = mean(a); return Math.sqrt(mean(a.map(x => (x - m) ** 2))); };
+  const f = (x, d) => fmt(x, d);
+  function explain(row) {
+    const d = +row.tick;
+    const upTo = ticks.filter(t => t.t <= d);
+    const steps = {}, raw = {};
+    for (const k of P) {
+      const [kind, w] = STRAT[k];
+      const s = upTo.map(t => t[k]), price = s[s.length - 1];
+      const L = [[`Prix au tick ${d}`, f(price, 4)]];
+      if (kind === "zscore") {
+        const recent = s.slice(-w), m = mean(recent), sd = pstdev(recent), z = (price - m) / sd;
+        raw[k] = Math.max(-1, Math.min(1, -z / 2));
+        L.push([`Moyenne des ${w} derniers prix`, f(m, 4)], [`Écart-type sur ${w} prix`, f(sd, 4)],
+          ["z = (prix − moyenne) / écart-type", `${sgn(z, 2)} → ${z < 0 ? "prix sous la moyenne : bon marché" : "prix au-dessus de la moyenne : cher"}`],
+          ["Signal brut = −z / 2, borné à [−1, +1]", `${sgn(raw[k], 3)} → voudrait ${raw[k] > 0 ? "acheter" : "vendre"} ${qty(100 * raw[k])} unités`]);
+      } else {
+        const maNow = mean(s.slice(-w)), maBefore = mean(s.slice(-w - LAG, -LAG));
+        const above = price > maNow, rising = maNow > maBefore;
+        raw[k] = above && rising ? 1 : !above && !rising ? -1 : 0;
+        L.push([`Moyenne des ${w} derniers prix`, f(maNow, 4)], [`Même moyenne il y a ${LAG} ticks`, f(maBefore, 4)],
+          ["Prix au-dessus de sa moyenne ?", above ? "oui" : "non"], ["Moyenne en hausse ?", rising ? "oui" : "non"],
+          ["Signal brut (momentum)", raw[k] === 1 ? "+1 → tendance haussière confirmée : voudrait acheter 100 unités"
+            : raw[k] === -1 ? "−1 → tendance baissière confirmée : voudrait vendre 100 unités" : "0 → signaux contradictoires : on attend"]);
+      }
+      steps[k] = L;
+    }
+    // Répartition de l'argent : achats servis dans l'ordre A, C, B ; réserve de 50 intouchable
+    let left = +row.money;
+    for (const k of PRIORITY) {
+      const price = upTo[upTo.length - 1][k];
+      let fin = raw[k], txt;
+      if (raw[k] <= 0) txt = raw[k] < 0 ? "vente : ne consomme pas d'argent" : "rien à acheter";
+      else if (left <= RESERVE) { fin = 0; txt = `argent restant ${f(left, 2)} ≤ réserve ${RESERVE} : achat annulé`; }
+      else {
+        const max = (left - RESERVE) / price;
+        if (100 * raw[k] <= max) txt = `argent restant ${f(left, 2)} − réserve ${RESERVE} = ${f(left - RESERVE, 2)} : assez pour ${qty(100 * raw[k])} unités`;
+        else { fin = Math.round(max / 100 * 1000) / 1000;   // = round(max_units / 100, 3) dans algorithm.py
+          txt = `argent restant ${f(left, 2)} − réserve ${RESERVE} = ${f(left - RESERVE, 2)} ; ÷ prix ${f(price, 4)} = ${f(max, 1)} unités max : achat réduit`; }
+        if (fin > 0) left -= 100 * fin * price;
+      }
+      steps[k].push(["Argent (achats servis dans l'ordre A, C, B)", txt]);
+      const published = +row[`signal_${k}`];
+      steps[k].push(["Signal publié dans decision.json", `<b>${sgn(published, 3)}</b> → ${published > 0 ? "achat" : published < 0 ? "vente" : "aucun ordre"}${published ? ` de ${qty(100 * published)} unités` : ""}`
+        + (Math.abs(Math.round(fin * 1000) / 1000 - published) > 0.0015 ? ` <span class="sub">(recalcul : ${sgn(fin, 3)})</span>` : "")]);
+    }
+    const name = { zscore: "retour à la moyenne (z-score)", momentum: "suivi de tendance (momentum)" };
+    return `<p class="sub">Décision calculée le ${row.run_time.replace("T", " ").slice(0, 16)} UTC avec les prix du tick ${d}
+        et l'argent disponible à ce moment : ${f(+row.money, 2)}.</p><div class="calc">` +
+      P.map(k => `<div><h3>${k} : ${name[STRAT[k][0]]}, ${STRAT[k][1]} ticks</h3><table>` +
+        steps[k].map(([a, b]) => `<tr><td>${a}</td><td>${b}</td></tr>`).join("") + `</table></div>`).join("") + `</div>`;
+  }
+
   const lines = [];
   const firstTick = hist.length ? +hist[0].tick : lastTick.t;
   // Portefeuille reconstitué tick par tick : départ = ligne du 1er tick du journal,
@@ -333,10 +398,11 @@ async function main() {
       const k = s[0], u = 100 * +inForce[`signal_${k}`];
       return s.replace(/→ (achat|vente) [\d.]+/, `→ $1 ${qty(u)}`);
     }).join("<br>");
-    lines.push(`<tr><td class="num">${t.t}</td><td class="num">${t.timestamp.replace("T", " ").slice(0, 16)}</td>
-      <td class="num">${orders}</td><td>${why}</td>
+    lines.push(`<tr class="row" title="Cliquer pour voir le calcul"><td class="num">${t.t}</td><td class="num">${t.timestamp.replace("T", " ").slice(0, 16)}</td>
+      <td class="num">${orders}</td><td>${why}<br><span class="more">Voir le calcul détaillé</span></td>
       <td class="num">${fmt(value)}<br><span class="sub">${sgn(value - prevValue)} ce tick</span></td>
-      <td class="num">${fmt(money, 1)}<br><span class="sub">${sgn(money - moneyBefore, 1)} ce tick</span></td></tr>`);
+      <td class="num">${fmt(money, 1)}<br><span class="sub">${sgn(money - moneyBefore, 1)} ce tick</span></td></tr>
+      <tr class="detail" hidden><td colspan="6">${explain(inForce)}</td></tr>`);
     prevValue = value;
   }
   lines.reverse();   // plus récent en haut
@@ -344,6 +410,12 @@ async function main() {
     `<tr><th>Tick</th><th>Date (UTC)</th><th>Ordres exécutés <span class="sub">(signal)</span></th>
      <th>Explication (décision de l'algo)</th><th>Ma valeur</th><th>Argent</th></tr>`
     + lines.slice(0, 30).join("");
+  // clic sur une ligne : ouvre / ferme son détail
+  document.getElementById("log").onclick = e => {
+    const tr = e.target.closest("tr.row");
+    if (tr) { const det = tr.nextElementSibling; det.hidden = !det.hidden;
+      tr.querySelector(".more").textContent = det.hidden ? "Voir le calcul détaillé" : "Masquer le calcul"; }
+  };
 
   const lag = lastLogged !== null && lastLogged < last.t
     ? ` Journal de l'algo en retard (dernier tick journalisé : ${lastLogged}) — valeurs en direct quand même.` : "";
@@ -353,7 +425,8 @@ async function main() {
 }
 
 main().catch(e => { document.getElementById("status").textContent = "Erreur de chargement : " + e.message; });
-setTimeout(() => location.reload(), REFRESH_MIN * 60 * 1000);   // actualisation automatique
+// actualisation automatique, reportée tant qu'un détail est ouvert (pour ne pas le fermer pendant l'oral)
+setInterval(() => { if (!document.querySelector("tr.detail:not([hidden])")) location.reload(); }, REFRESH_MIN * 60 * 1000);
 </script>
 </body>
 </html>
