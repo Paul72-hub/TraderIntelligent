@@ -104,7 +104,8 @@ def make_reason(p, prices, raw, final):
     """Phrase d'une ligne pour le journal de décisions."""
     kind, window = STRATEGIES[p]
     if final > 0:
-        action = f"achat {100 * final:.0f}" + (" (réduit : argent)" if final < raw else "")
+        # comparé au brut ARRONDI : 0.15 vs 0.1501 n'est pas une réduction (bug 27/11)
+        action = f"achat {100 * final:.0f}" + (" (réduit : argent)" if final < round(raw, 3) else "")
     elif final < 0:
         action = f"vente {-100 * final:.0f}"
     else:

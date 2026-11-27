@@ -30,14 +30,16 @@ Formule du signal : `z = (prix − moyenne_N) / écart-type_N`, `signal = −z /
 | 2026-11-26 | Run #4 en échec malgré la file d'attente | Un run manuel est figé sur le commit du clic ; il récupérait l'ancienne version de `main` | `actions/checkout` avec `ref: main` | Runs #5 et #6 (double clic volontaire) : tous deux verts |
 
 | 2026-11-27 | Cron très peu fiable : 2 runs seulement entre le 26/11 22:00 et le 27/11 09:49 (au lieu de ~38) ; tick 386 non journalisé | Créneaux :00/:30 surchargés chez GitHub | Cron déplacé à `7,37 * * * *` ; « Run workflow » manuel après un tick en secours | À observer |
-| 2026-11-27 | La ligne « tick 384 » du journal indique « B gardé » alors que la décision exécutée au tick 385 était B +0,695 | `log_history` ignorait les runs suivants d'un même tick → le journal gardait le 1er calcul, pas le dernier | La ligne du tick est désormais **remplacée** par le dernier calcul | Ligne 384 laissée telle quelle (trace de l'incident) ; le dashboard signale l'écart automatiquement (contrôle d'exécution) |
+| 2026-11-27 | La ligne « tick 384 » du journal indique « B gardé » alors que la décision exécutée au tick 385 était B +0,695 | `log_history` ignorait les runs suivants d'un même tick → le journal gardait le 1er calcul, pas le dernier | La ligne du tick est désormais **remplacée** par le dernier calcul | Ligne 384 corrigée le 27/11 avec la décision réellement lue par le marché : `decision.json` du commit d08ca3c (run #7 : A 0,15 / B 0,695 / C −0,1), phrase recalculée avec le code de production sur les prix ≤ 384 et argent 1 000 (décision recalculée = décision publiée, vérifié). Le dashboard contrôle à chaque tick ordres constatés = signal × 100 × ticks écoulés (✅/⚠️) |
 | 2026-11-27 | Aucun run du bot entre 04:40 et ~15:00 (≈ 20 créneaux cron `7,37` sautés) → la décision du tick 385 a été appliquée 2 fois (ticks 386 et 387) alors que l'argent était remonté à 184,6 | Cron GitHub non garanti (best effort) | « Run workflow » manuel ; fiabilisation à décider | Visible dans le journal : ordres du tick 387 = 2 × décision |
 
 Erreurs de l'IA relevées : doute injustifié sur l'existence de `actions/checkout@v7` (vérifié : v7.0.1 existe) ;
 affirmation fausse « une fenêtre de 20 donne un signal quasi nul sur A » (mesuré : +7 713) ;
 commandes Git données dans le mauvais ordre (pull avant commit) ; première correction du conflit incomplète ;
 prédiction « le partage de l'argent coûtera cher » (mesuré : gain combiné ≈ somme des gains séparés) ;
-journal qui gardait le premier calcul d'un tick au lieu du dernier ; tuile « décision en cours » lue dans le journal au lieu de decision.json.
+journal qui gardait le premier calcul d'un tick au lieu du dernier ; tuile « décision en cours » lue dans le journal au lieu de decision.json ;
+« (réduit : argent) » affiché à tort quand seul l'arrondi changeait le signal (0,15 vs 0,1501) ;
+1re réponse à l'écart journal/exécution = un ⚠️ et une phrase longue qui cassait la mise en page, au lieu de corriger le journal depuis la source (historique Git).
 
 Limites connues : fenêtres choisies sur les mêmes données que le test (risque de surapprentissage),
 pas de frais de transaction, impact de nos ordres sur le prix supposé nul.
